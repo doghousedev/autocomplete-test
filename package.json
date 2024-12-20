@@ -1,0 +1,26 @@
+{
+  "name": "autocomplete-test",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "vite",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "lucide-svelte": "^0.468.0",
+    "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^3.0.1",
+    "@tsconfig/svelte": "^5.0.2",
+    "@types/node": "^20.10.5",
+    "svelte": "^4.2.8",
+    "svelte-check": "^3.6.2",
+    "svelte-preprocess": "^5.1.3",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.10"
+  }
+}
