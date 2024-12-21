@@ -8,6 +8,9 @@
   let lastFetchTime = null;
   let searchTerm = '';
   let searchTimeout;
+  let fetchTime = 0; // Initialize fetch time to 0
+  let resultsTable = []; // Array to store results for display
+  let fetchLog = []; // Array to store log of fetch results
 
   function debounce(func, wait) {
     return (...args) => {
@@ -39,10 +42,7 @@
     error = null;
     
     try {
-      console.log('Starting fetch with params:', { object, fieldList, filter, sortBy });
       const uri = `http://localhost:3000/api/${object}?fieldList=${fieldList}&filter=${filter}&sortBy=${sortBy}`;
-      console.log('Request URI:', uri);
-      
       const response = await fetch(uri, {
         method: 'GET',
         credentials: 'include',
@@ -51,20 +51,14 @@
         }
       });
 
-      console.log('Response status:', response.status);
       const data = await response.json();
-      console.log('Raw response data:', data);
-      console.log('Platform data:', data?.platform);
-      console.log('Record data:', data?.platform?.record);
 
       if (!data?.platform?.record) {
-        console.log('Data validation failed');
         throw new Error('Invalid data format received');
       }
 
       return data.platform.record; // Return the records instead of assigning directly
     } catch (e) {
-      console.error('Error details:', e);
       error = e.message;
       return []; // Return an empty array in case of error
     } finally {
@@ -81,7 +75,7 @@
       "account_name >= 'P' AND account_name <= 'R'",
       "account_name >= 'S' AND account_name <= 'T'",
       "account_name >= 'U' AND account_name <= 'Z'",
-      "account_name >= '0' AND account_name <= '9'",
+      "account_name >= '0' AND account_name <= '9'"
     ];
 
     const fetchPromises = filters.map(filter => 
@@ -93,22 +87,39 @@
       })
     );
 
+    // Start the timer
+    const startTime = performance.now();
+
     // Wait for all fetches to complete
     const results = await Promise.all(fetchPromises);
     
     // Combine and sort the results
     accounts = results.flat().sort((a, b) => a.account_name.localeCompare(b.account_name));
     lastFetchTime = new Date().toLocaleTimeString();
-    console.log('Final accounts data:', accounts);
+
+    // Stop the timer and calculate elapsed time
+    const endTime = performance.now();
+    fetchTime = endTime - startTime;
+
+    // Update the log array reactively
+    fetchLog = [...fetchLog, { 
+      time: fetchTime, 
+      count: accounts.length,
+      timestamp: new Date().toLocaleTimeString()
+    }];
   }
 
-  onMount(async () => {
+  function handleFetchAccounts() {
+    isLoading = true; // Disable button
+    fetchAccountsInParallel().finally(() => {
+      isLoading = false; // Re-enable button after fetch
+    });
+  }
+
+  onMount(() => {
     document.documentElement.style.backgroundColor = '#121212';
     document.body.style.backgroundColor = '#121212';
     document.body.style.color = '#ffffff';
-    
-    // Load accounts on mount
-    await fetchAccountsInParallel();
   });
 </script>
 
@@ -145,6 +156,30 @@
   {:else if accounts.length === 0}
     <p class="no-data">No accounts found</p>
   {/if}
+
+  <button on:click={handleFetchAccounts} disabled={isLoading}>
+    Fetch Accounts
+  </button>
+
+  <h2>Fetch Results</h2>
+  <table style="visibility: visible;">
+    <thead>
+      <tr>
+        <th>Time (ms)</th>
+        <th>Account Count</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#each fetchLog as result}
+        <tr>
+          <td>{result.time.toFixed(2)}</td>
+          <td>{result.count}</td>
+          <td>{result.timestamp}</td>
+        </tr>
+      {/each}
+    </tbody>
+  </table>
 </main>
 
 <style>
@@ -204,6 +239,22 @@
 
   .autocomplete-item:hover {
     background-color: #3e3e3e;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+  }
+
+  th, td {
+    padding: 10px;
+    border: 1px solid #3e3e3e;
+    text-align: left;
+  }
+
+  th {
+    background-color: #2e2e2e;
   }
 
   .error {
