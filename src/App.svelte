@@ -11,6 +11,7 @@
   let fetchTime = 0; // Initialize fetch time to 0
   let resultsTable = []; // Array to store results for display
   let fetchLog = []; // Array to store log of fetch results
+  let filterCount = 1; // Default filter count
 
   function debounce(func, wait) {
     return (...args) => {
@@ -35,6 +36,46 @@
 
   $: {
     handleSearch(searchTerm);
+  }
+
+  function validateInput() {
+    // Just validate the input, don't generate filters
+    if (filterCount < 1) {
+        filterCount = 1;
+    } else if (filterCount > 10) {
+        filterCount = 10;
+    }
+  }
+
+  function generateFilters(count) {
+    if (count <= 1) {
+        return ['']; // Return empty filter for all records
+    }
+
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const totalLetters = alphabet.length;
+    const lettersPerFilter = Math.ceil(totalLetters / (count - 1)); // Adjust for special chars filter
+    const generatedFilters = [];
+
+    // First filter for special characters and numbers
+    generatedFilters.push("account_name < 'A'");
+    
+    // Generate remaining filters
+    for (let i = 0; i < count - 1; i++) {
+        const startIndex = i * lettersPerFilter;
+        const startLetter = alphabet.charAt(startIndex);
+        
+        if (i === count - 2) { // Last filter
+            generatedFilters.push(`account_name >= '${startLetter}'`);
+        } else {
+            const endIndex = Math.min((i + 1) * lettersPerFilter, totalLetters - 1);
+            const endLetter = alphabet.charAt(endIndex);
+            generatedFilters.push(`account_name >= '${startLetter}' AND account_name < '${endLetter}'`);
+        }
+    }
+
+    console.log('Generated Filters:', generatedFilters); // Debug log
+    return generatedFilters;
   }
 
   async function fetchRest({ object, fieldList, filter, sortBy }) {
@@ -85,61 +126,54 @@
   }
 
   async function fetchAccountsInParallel() {
-    const filters = [
-      "account_name < 'A'",  // Special chars and numbers
-      "account_name >= 'A' AND account_name < 'D'", // A to D
-      "account_name >= 'D' AND account_name < 'H'", // D to H
-      "account_name >= 'H' AND account_name < 'K'", // H to K
-      "account_name >= 'K' AND account_name < 'P'", // K to P
-      "account_name >= 'P' AND account_name < 'S'", // P to S
-      "account_name >= 'S'"  // S to Z
-    ];
-
-    // Start the timer
     const startTime = performance.now();
     const fetchResults = { successful: 0, failed: 0, records: [] };
-
+    
     try {
-      const fetchPromises = filters.map(filter =>
-        fetchRest({
-          object: 'Accounts',
-          fieldList: 'id,account_name',
-          filter: filter,
-          sortBy: 'account_name'
-        })
-      );
+        // Generate filters only when needed
+        const currentFilters = generateFilters(filterCount);
+        console.log('Using filters:', currentFilters);
 
-      const results = await Promise.all(fetchPromises);
+        const fetchPromises = currentFilters.map(filter =>
+            fetchRest({
+                object: 'Accounts',
+                fieldList: 'id,account_name',
+                filter: filter,
+                sortBy: 'account_name'
+            })
+        );
 
-      results.forEach((result, index) => {
-        fetchResults.successful++;
-        fetchResults.records.push(...result);
-        console.log(`Fetched records for filter: ${filters[index]}, count: ${result.length}`);
-      });
+        const results = await Promise.all(fetchPromises);
 
-      // Sort all records and remove duplicates (just in case)
-      accounts = [...new Set(fetchResults.records)]
-        .sort((a, b) => a.account_name.localeCompare(b.account_name));
-      
-      // Stop the timer and calculate elapsed time
-      const endTime = performance.now();
-      fetchTime = endTime - startTime;
+        results.forEach((result, index) => {
+            fetchResults.successful++;
+            fetchResults.records.push(...result);
+            console.log(`Fetched records for filter: ${currentFilters[index]}, count: ${result.length}`);
+        });
 
-      // Update the log array reactively
-      fetchLog = [...fetchLog, { 
-        time: fetchTime, 
-        count: accounts.length,
-        timestamp: new Date().toLocaleTimeString(),
-        successfulFetches: fetchResults.successful,
-        failedFetches: fetchResults.failed,
-      }];
+        // Sort all records and remove duplicates
+        accounts = [...new Set(fetchResults.records)]
+            .sort((a, b) => a.account_name.localeCompare(b.account_name));
+        
+        const endTime = performance.now();
+        fetchTime = endTime - startTime;
+
+        // Update the log array reactively
+        fetchLog = [...fetchLog, { 
+            time: fetchTime, 
+            count: accounts.length,
+            timestamp: new Date().toLocaleTimeString(),
+            successfulFetches: fetchResults.successful,
+            failedFetches: fetchResults.failed,
+            filtersApplied: filterCount
+        }];
 
     } catch (error) {
-      console.error('Error in parallel fetch:', error);
-      error = 'Failed to fetch accounts';
+        console.error('Error in parallel fetch:', error);
+        error = 'Failed to fetch accounts';
     } finally {
-      lastFetchTime = new Date().toLocaleTimeString();
-      isLoading = false; // Re-enable the button after fetch is complete
+        lastFetchTime = new Date().toLocaleTimeString();
+        isLoading = false;
     }
   }
 
@@ -184,6 +218,12 @@
     {/if}
   </div>
   
+  <label for="filterCount">Number of Filters:</label>
+  <input type="number" id="filterCount" bind:value={filterCount} min="1" max="10" on:input={validateInput} />
+  <div>
+    <p>Current Filters: {generateFilters(filterCount).join(', ')}</p>
+  </div>
+
   {#if lastFetchTime}
     <p class="last-fetch">Last fetched: {lastFetchTime}</p>
   {/if}
@@ -209,6 +249,7 @@
         <th>Timestamp</th>
         <th>Successful Fetches</th>
         <th>Failed Fetches</th>
+        <th>Filters Applied</th>
       </tr>
     </thead>
     <tbody>
@@ -219,6 +260,7 @@
           <td>{result.timestamp}</td>
           <td>{result.successfulFetches}</td>
           <td>{result.failedFetches}</td>
+          <td>{result.filtersApplied}</td>
         </tr>
       {/each}
     </tbody>
