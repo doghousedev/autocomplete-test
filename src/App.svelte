@@ -89,6 +89,7 @@
       "account_name < 'A'",  // Special chars and numbers
       "account_name >= 'A' AND account_name < 'D'", // A to D
       "account_name >= 'D' AND account_name < 'H'", // D to H
+      "account_name >= 'H' AND account_name < 'K'", // H to K
       "account_name >= 'K' AND account_name < 'P'", // K to P
       "account_name >= 'P' AND account_name < 'S'", // P to S
       "account_name >= 'S'"  // S to Z
@@ -124,7 +125,7 @@
       const endTime = performance.now();
       fetchTime = endTime - startTime;
 
-      // Use the spread operator to ensure reactivity
+      // Update the log array reactively
       fetchLog = [...fetchLog, { 
         time: fetchTime, 
         count: accounts.length,
