@@ -84,10 +84,6 @@
     }
   }
 
-  function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
   async function fetchAccountsInParallel() {
     const filters = [
       "account_name < 'A'",  // Special chars and numbers
@@ -128,14 +124,14 @@
       const endTime = performance.now();
       fetchTime = endTime - startTime;
 
-      // Append to the log array reactively using push
-      fetchLog.push({ 
+      // Use the spread operator to ensure reactivity
+      fetchLog = [...fetchLog, { 
         time: fetchTime, 
         count: accounts.length,
         timestamp: new Date().toLocaleTimeString(),
         successfulFetches: fetchResults.successful,
         failedFetches: fetchResults.failed,
-      });
+      }];
 
     } catch (error) {
       console.error('Error in parallel fetch:', error);
@@ -200,10 +196,10 @@
   {/if}
 
   <button on:click={handleFetchAccounts} disabled={isLoading}>
-    Fetch Accounts
+    Test Fetch
   </button>
 
-  <h2>Fetch Results</h2>
+  <h2>Fetch Log</h2>
   <table style="visibility: visible;">
     <thead>
       <tr>
@@ -223,26 +219,6 @@
           <td>{result.successfulFetches}</td>
           <td>{result.failedFetches}</td>
         </tr>
-      {/each}
-    </tbody>
-  </table>
-
-  <h2>Range Counts</h2>
-  <table style="visibility: visible;">
-    <thead>
-      <tr>
-        <th>Range</th>
-        <th>Count</th>
-      </tr>
-    </thead>
-    <tbody>
-      {#each fetchLog as result}
-        {#each result.rangeCounts as rangeCount}
-          <tr>
-            <td>{rangeCount.range}</td>
-            <td>{rangeCount.count}</td>
-          </tr>
-        {/each}
       {/each}
     </tbody>
   </table>
