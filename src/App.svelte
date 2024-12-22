@@ -38,11 +38,18 @@
   }
 
   async function fetchRest({ object, fieldList, filter, sortBy }) {
-    isLoading = true;
-    error = null;
-    
+    let uri; // Declare uri in the outer scope
     try {
-      const uri = `http://localhost:3000/api/${object}?fieldList=${fieldList}&filter=${filter}&sortBy=${sortBy}`;
+      // Properly encode the URL parameters
+      const params = new URLSearchParams({
+        fieldList,
+        filter,
+        sortBy
+      });
+      
+      uri = `http://localhost:3000/api/${object}?${params.toString()}`;
+      console.log('Fetching:', uri); // Log the actual URL being fetched
+
       const response = await fetch(uri, {
         method: 'GET',
         credentials: 'include',
@@ -51,69 +58,104 @@
         }
       });
 
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorData.platform.message.description}`);
+      }
+
       const data = await response.json();
 
       if (!data?.platform?.record) {
-        throw new Error('Invalid data format received');
+        throw new Error('No records found or invalid data format received');
       }
 
-      return data.platform.record; // Return the records instead of assigning directly
+      // Ensure we return an array
+      const records = Array.isArray(data.platform.record) ? data.platform.record : [data.platform.record];
+
+      // Check if we have all records (you might need to adjust this based on your API)
+      if (data.platform.hasMore) {
+        console.warn('Warning: More records available but not fetched due to pagination');
+      }
+
+      return records;
     } catch (e) {
-      error = e.message;
-      return []; // Return an empty array in case of error
-    } finally {
-      isLoading = false;
+      // Include more context in the error
+      throw new Error(`Failed to fetch range with filter ${filter}: ${e.message}\nURL: ${uri}`);
     }
+  }
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   async function fetchAccountsInParallel() {
     const filters = [
-      "account_name >= 'A' AND account_name <= 'C'",
-      "account_name >= 'D' AND account_name <= 'G'",
-      "account_name >= 'H' AND account_name <= 'J'",
-      "account_name >= 'K' AND account_name <= 'O'",
-      "account_name >= 'P' AND account_name <= 'R'",
-      "account_name >= 'S' AND account_name <= 'T'",
-      "account_name >= 'U' AND account_name <= 'Z'",
-      "account_name >= '0' AND account_name <= '9'"
+      "account_name < 'A'",  // Special chars and numbers
+      "account_name >= 'A' AND account_name < 'D'", // A to D
+      "account_name >= 'D' AND account_name < 'H'", // D to H
+      "account_name >= 'K' AND account_name < 'P'", // K to P
+      "account_name >= 'P' AND account_name < 'S'", // P to S
+      "account_name >= 'S'"  // S to Z
     ];
-
-    const fetchPromises = filters.map(filter => 
-      fetchRest({
-        object: 'Accounts',
-        fieldList: 'id,account_name',
-        filter: filter,
-        sortBy: 'account_name'
-      })
-    );
 
     // Start the timer
     const startTime = performance.now();
+    const fetchResults = { successful: 0, failed: 0, records: [] };
 
-    // Wait for all fetches to complete
-    const results = await Promise.all(fetchPromises);
-    
-    // Combine and sort the results
-    accounts = results.flat().sort((a, b) => a.account_name.localeCompare(b.account_name));
-    lastFetchTime = new Date().toLocaleTimeString();
+    try {
+      const fetchPromises = filters.map(filter =>
+        fetchRest({
+          object: 'Accounts',
+          fieldList: 'id,account_name',
+          filter: filter,
+          sortBy: 'account_name'
+        })
+      );
 
-    // Stop the timer and calculate elapsed time
-    const endTime = performance.now();
-    fetchTime = endTime - startTime;
+      const results = await Promise.all(fetchPromises);
 
-    // Update the log array reactively
-    fetchLog = [...fetchLog, { 
-      time: fetchTime, 
-      count: accounts.length,
-      timestamp: new Date().toLocaleTimeString()
-    }];
+      results.forEach((result, index) => {
+        fetchResults.successful++;
+        fetchResults.records.push(...result);
+        console.log(`Fetched records for filter: ${filters[index]}, count: ${result.length}`);
+      });
+
+      // Sort all records and remove duplicates (just in case)
+      accounts = [...new Set(fetchResults.records)]
+        .sort((a, b) => a.account_name.localeCompare(b.account_name));
+      
+      // Stop the timer and calculate elapsed time
+      const endTime = performance.now();
+      fetchTime = endTime - startTime;
+
+      // Append to the log array reactively using push
+      fetchLog.push({ 
+        time: fetchTime, 
+        count: accounts.length,
+        timestamp: new Date().toLocaleTimeString(),
+        successfulFetches: fetchResults.successful,
+        failedFetches: fetchResults.failed,
+      });
+
+    } catch (error) {
+      console.error('Error in parallel fetch:', error);
+      error = 'Failed to fetch accounts';
+    } finally {
+      lastFetchTime = new Date().toLocaleTimeString();
+      isLoading = false; // Re-enable the button after fetch is complete
+    }
   }
 
   function handleFetchAccounts() {
-    isLoading = true; // Disable button
-    fetchAccountsInParallel().finally(() => {
-      isLoading = false; // Re-enable button after fetch
-    });
+    isLoading = true;
+    fetchAccountsInParallel()
+      .catch(err => {
+        console.error('Error in fetch:', err);
+        error = 'Failed to fetch accounts';
+      })
+      .finally(() => {
+        isLoading = false;
+      });
   }
 
   onMount(() => {
@@ -168,6 +210,8 @@
         <th>Time (ms)</th>
         <th>Account Count</th>
         <th>Timestamp</th>
+        <th>Successful Fetches</th>
+        <th>Failed Fetches</th>
       </tr>
     </thead>
     <tbody>
@@ -176,7 +220,29 @@
           <td>{result.time.toFixed(2)}</td>
           <td>{result.count}</td>
           <td>{result.timestamp}</td>
+          <td>{result.successfulFetches}</td>
+          <td>{result.failedFetches}</td>
         </tr>
+      {/each}
+    </tbody>
+  </table>
+
+  <h2>Range Counts</h2>
+  <table style="visibility: visible;">
+    <thead>
+      <tr>
+        <th>Range</th>
+        <th>Count</th>
+      </tr>
+    </thead>
+    <tbody>
+      {#each fetchLog as result}
+        {#each result.rangeCounts as rangeCount}
+          <tr>
+            <td>{rangeCount.range}</td>
+            <td>{rangeCount.count}</td>
+          </tr>
+        {/each}
       {/each}
     </tbody>
   </table>
